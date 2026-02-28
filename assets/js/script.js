@@ -96,9 +96,10 @@ function inicializarOneSignal() {
             appId: ONE_SIGNAL_APP_ID,
             notifyButton: { enable: false },
             autoResubscribe: true,
-            allowLocalhostAsSecureOrigin: true,
-            serviceWorkerParam: { scope: '/recordatorios-app-web/' },
-            serviceWorkerPath: '/recordatorios-app-web/OneSignalSDKWorker.js',
+            welcomeNotification: {
+                title: "💊 ¡Notificaciones activadas!",
+                message: "Te recordaré tu suplemento y parche cada día 😉"
+            }
         });
         await verificarSuscripcion();
     });
