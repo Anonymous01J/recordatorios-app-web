@@ -108,6 +108,8 @@ function inicializarOneSignal() {
             },
             autoResubscribe: true,
             allowLocalhostAsSecureOrigin: true,
+            serviceWorkerParam: { scope: "/recordatorios-app-web/" },
+            serviceWorkerPath: "/recordatorios-app-web/OneSignalSDKWorker.js",
         });
 
         await verificarSuscripcion();
