@@ -1,5 +1,5 @@
 // ==================== CONFIGURACIÓN ====================
-const ONE_SIGNAL_APP_ID = '6b37a1cf-ee9d-4941-8ca0-eb7bef3fbc75';
+const ONE_SIGNAL_APP_ID = 'e9ec8803-b4a6-4235-b1a3-8052ae76dc04';
 
 // Definición de las dos notificaciones base
 const NOTIFICACIONES = {
