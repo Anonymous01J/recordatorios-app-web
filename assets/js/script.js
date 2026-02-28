@@ -1,5 +1,5 @@
 // ==================== CONFIGURACIÓN ====================
-const ONE_SIGNAL_APP_ID = 'TU_APP_ID_DE_ONESIGNAL'; // <-- REEMPLAZA ESTO
+const ONE_SIGNAL_APP_ID = '6b37a1cf-ee9d-4941-8ca0-eb7bef3fbc75'; // <-- REEMPLAZA ESTO
 
 // Definición de las dos notificaciones
 const NOTIFICACIONES = {
