@@ -94,76 +94,33 @@ function inicializarOneSignal() {
     OneSignalDeferred.push(async function(OneSignal) {
         await OneSignal.init({
             appId: ONE_SIGNAL_APP_ID,
-            notifyButton: {
-                enable: true,
-                size: 'large',
-                position: 'bottom-right',
-                prenotify: true,
-                showCredit: false
-            },
-            welcomeNotification: {
-                title: "💊 ¡Notificaciones activadas!",
-                message: "Te recordaré tu suplemento y parche cada día 😉",
-                url: window.location.href
-            },
+            notifyButton: { enable: false },
             autoResubscribe: true,
             allowLocalhostAsSecureOrigin: true,
-            serviceWorkerParam: { scope: "/recordatorios-app-web/" },
-            serviceWorkerPath: "/recordatorios-app-web/OneSignalSDKWorker.js",
+            serviceWorkerParam: { scope: '/recordatorios-app-web/' },
+            serviceWorkerPath: '/recordatorios-app-web/OneSignalSDKWorker.js',
         });
-
         await verificarSuscripcion();
-        configurarListeners(OneSignal);
     });
 }
 
-function configurarListeners(OneSignal) {
-    OneSignal.Notifications.addEventListener('click', async (event) => {
-        const { action, notification } = event;
-        const data = notification.data || {};
-
-        switch(action) {
-            case 'done':
-                showMessage('✅ ¡Bien hecho!', 'success');
-                marcarComoCompletado(data.tipo);
-                break;
-            case 'snooze':
-                showMessage('⏰ Te recordaremos en 10 minutos', 'info');
-                programarRecordatorio(data.tipo, 10);
-                break;
-            case 'pirata':
-                showMessage('🏴‍☠️ ¡Jaja, eres un gran Garfio!', 'info');
-                break;
-            default:
-                if (event.notification.url) {
-                    window.open(event.notification.url, '_blank');
-                }
-        }
-    });
-}
+function configurarListeners() {}
 
 async function verificarSuscripcion() {
-    const OneSignal = window.OneSignal;
-
-    // Fuente de verdad: permiso del navegador + optedIn de OneSignal
     const permisoNavegador = Notification.permission === 'granted';
-
-    if (!OneSignal || !permisoNavegador) {
+    if (!permisoNavegador) {
         appState.suscrito = false;
         guardarEstado();
         renderizarEstado();
         return;
     }
-
     try {
-        // PushSubscription es un objeto sincrónico en SDK v16, no una promesa
-        const optedIn = OneSignal.User.PushSubscription.optedIn;
+        const OneSignal = window.OneSignal;
+        const optedIn = OneSignal ? OneSignal.User.PushSubscription.optedIn : false;
         appState.suscrito = permisoNavegador && (optedIn === true || optedIn === undefined);
-    } catch (error) {
-        // Si falla OneSignal pero el navegador tiene permiso, consideramos suscrito
+    } catch(e) {
         appState.suscrito = permisoNavegador;
     }
-
     guardarEstado();
     renderizarEstado();
 }
@@ -173,7 +130,7 @@ window.suscribir = async function() {
     const OneSignal = window.OneSignal;
     if (OneSignal) {
         await OneSignal.Notifications.requestPermission();
-        setTimeout(async () => { await verificarSuscripcion(); }, 500);
+        setTimeout(async () => { await verificarSuscripcion(); }, 1000);
     }
 };
 
@@ -181,8 +138,11 @@ window.desuscribir = async function() {
     const OneSignal = window.OneSignal;
     if (OneSignal) {
         await OneSignal.User.PushSubscription.optOut();
-        await verificarSuscripcion();
     }
+    appState.suscrito = false;
+    guardarEstado();
+    renderizarEstado();
+    showMessage('🔕 Notificaciones desactivadas', 'info');
 };
 
 // ==================== VERIFICADOR ====================
@@ -373,7 +333,6 @@ window.enviarPrueba = async function() {
         return;
     }
 
-    const OneSignal = window.OneSignal;
     const ahora = new Date();
     const horaStr = formatHour(ahora.getHours());
 
