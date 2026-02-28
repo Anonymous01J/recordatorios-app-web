@@ -1,0 +1,21 @@
+{
+  "name": "Recordatorios Suplemento y Parche",
+  "short_name": "Recordatorios",
+  "description": "Recibe recordatorios para tu suplemento (cada 3h) y tu parche (una vez al día)",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#667eea",
+  "icons": [
+    {
+      "src": "https://cdn.onesignal.com/sdks/icons/android-icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn.onesignal.com/sdks/icons/android-icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

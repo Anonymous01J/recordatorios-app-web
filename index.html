@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>💊 Recordatorios - Suplemento y Parche</title>
+    <link rel="stylesheet" href="assets/css/style.css">
+    <link rel="manifest" href="assets/jsmanifest.json">
+    <!-- OneSignal SDK -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>💊 Tus Recordatorios Diarios</h1>
+            <p class="subtitle">Suplemento cada 3h · Parche solo a las 9pm 🪝</p>
+        </header>
+
+        <!-- Tarjeta de estado -->
+        <div class="status-card">
+            <div class="status-header">
+                <span class="status-indicator" id="statusIndicator"></span>
+                <span id="statusText">No suscrito</span>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-label">💊 Suplemento hoy:</span>
+                    <span class="stat-value" id="suplementoCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">🪝 Parche hoy:</span>
+                    <span class="stat-value" id="parcheCount">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botones de suscripción -->
+        <div class="actions">
+            <button id="subscribeBtn" onclick="suscribir()" class="btn btn-primary">
+                🔔 Activar recordatorios
+            </button>
+            <button id="unsubscribeBtn" onclick="desuscribir()" class="btn btn-secondary" style="display: none;">
+                🔕 Desactivar
+            </button>
+        </div>
+
+        <!-- Tarjetas de las dos notificaciones -->
+        <div class="notificaciones-section">
+            <h2>🎯 Tus recordatorios</h2>
+            <div id="notificacionesContainer"></div>
+        </div>
+
+        <!-- Próximas notificaciones -->
+        <div class="proximas-section">
+            <h3>⏰ Próximos recordatorios</h3>
+            <div id="proximasContainer"></div>
+        </div>
+
+        <!-- Modo No Molestar -->
+        <div class="dnd-section" id="dndControls"></div>
+
+        <!-- Historial -->
+        <div class="historial-section">
+            <h3>📋 Historial de hoy</h3>
+            <div id="historialContainer" class="historial-list"></div>
+        </div>
+
+        <!-- Resumen informativo -->
+        <div class="info-box">
+            <h4>📌 Resumen:</h4>
+            <ul>
+                <li>💊 <strong>Suplemento:</strong> 12pm, 3pm, 6pm, 9pm (cada 3h)</li>
+                <li>🪝 <strong>Parche:</strong> 9pm (solo una vez al día)</li>
+                <li>🔕 <strong>No molestar:</strong> Silencia todo hasta mañana</li>
+                <li>⚠️ <strong>Ambas:</strong> Prioridad alta (no desaparecen solas)</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="assets/js/script.js"></script>
+</body>
+</html>
