@@ -128,10 +128,18 @@ async function verificarSuscripcion() {
 
 // ==================== SUSCRIPCIÓN ====================
 window.suscribir = async function() {
+    console.log("Intentando pedir permiso...");
     const OneSignal = window.OneSignal;
     if (OneSignal) {
-        await OneSignal.Notifications.requestPermission();
-        setTimeout(async () => { await verificarSuscripcion(); }, 1000);
+        try {
+            await OneSignal.Notifications.requestPermission();
+            console.log("Petición lanzada");
+            setTimeout(async () => { await verificarSuscripcion(); }, 1000);
+        } catch (err) {
+            console.error("Error al pedir permiso:", err);
+        }
+    } else {
+        console.error("OneSignal no está cargado");
     }
 };
 
