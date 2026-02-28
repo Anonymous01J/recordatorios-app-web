@@ -131,14 +131,21 @@ function configurarListeners(OneSignal) {
     });
 }
 
+// Función correcta para verificar suscripción en OneSignal SDK v16
 async function verificarSuscripcion() {
     const OneSignal = window.OneSignal;
     if (!OneSignal) return;
     
-    const isOptedIn = await OneSignal.Notifications.getPermission();
-    const isSubscribed = await OneSignal.User.PushSubscription.optedIn;
+    try {
+        // Verificar si el usuario está suscrito a notificaciones
+        const subscription = await OneSignal.User.PushSubscription;
+        // subscription.optedIn es true si está suscrito
+        appState.suscrito = subscription && subscription.optedIn === true;
+    } catch (error) {
+        console.error("Error verificando suscripción:", error);
+        appState.suscrito = false;
+    }
     
-    appState.suscrito = isOptedIn && isSubscribed;
     renderizarEstado();
 }
 
@@ -146,14 +153,19 @@ async function verificarSuscripcion() {
 window.suscribir = async function() {
     const OneSignal = window.OneSignal;
     if (OneSignal) {
+        // Mostrar el diálogo de permisos y suscribir
         await OneSignal.Notifications.requestPermission();
-        await verificarSuscripcion();
+        // Esperar un momento para que se actualice el estado
+        setTimeout(async () => {
+            await verificarSuscripcion();
+        }, 500);
     }
 };
 
 window.desuscribir = async function() {
     const OneSignal = window.OneSignal;
     if (OneSignal) {
+        // Optar por no recibir notificaciones
         await OneSignal.User.PushSubscription.optOut();
         await verificarSuscripcion();
     }
@@ -238,6 +250,7 @@ async function enviarNotificacion(notificacion) {
     if (OneSignal && await OneSignal.User.PushSubscription.optedIn) {
         await OneSignal.Notifications.sendSelf(options);
     } else {
+        // Fallback a notificación local si no hay suscripción push
         if (Notification.permission === 'granted') {
             new Notification(options.title, options);
         }
@@ -279,6 +292,65 @@ function marcarComoCompletado(tipo) {
         renderizarHistorial();
     }
 }
+
+// ==================== NOTIFICACIÓN DE PRUEBA ====================
+window.enviarPrueba = async function() {
+    if (!appState.suscrito) {
+        showMessage('❌ Debes activar las notificaciones primero', 'error');
+        return;
+    }
+
+    const OneSignal = window.OneSignal;
+    const ahora = new Date();
+    const horaStr = formatHour(ahora.getHours());
+    
+    const options = {
+        title: "🧪 Notificación de prueba",
+        body: "Si ves esto, las notificaciones funcionan correctamente!",
+        icon: window.location.origin + '/icon-192x192.png',
+        badge: window.location.origin + '/badge-72x72.png',
+        data: {
+            tipo: 'prueba',
+            hora: ahora.getHours()
+        },
+        requireInteraction: false, // La prueba puede desaparecer sola
+        vibrate: [200, 100, 200],
+        actions: [
+            { action: 'ok', title: '✅ Entendido' }
+        ]
+    };
+
+    try {
+        if (OneSignal && await OneSignal.User.PushSubscription.optedIn) {
+            await OneSignal.Notifications.sendSelf(options);
+            showMessage('✅ Notificación de prueba enviada', 'success');
+            
+            // Agregar al historial
+            agregarAlHistorial({
+                id: 'prueba',
+                titulo: "🧪 Notificación de prueba",
+                mensaje: "Prueba manual",
+                icono: "🧪",
+                hora: horaStr,
+                fecha: ahora.toLocaleDateString(),
+                timestamp: ahora.toISOString(),
+                leida: false,
+                completado: false
+            });
+        } else {
+            // Fallback local
+            if (Notification.permission === 'granted') {
+                new Notification(options.title, options);
+                showMessage('✅ Notificación local enviada', 'success');
+            } else {
+                showMessage('❌ Permiso denegado para notificaciones', 'error');
+            }
+        }
+    } catch (error) {
+        console.error('Error enviando prueba:', error);
+        showMessage('❌ Error al enviar la prueba', 'error');
+    }
+};
 
 // ==================== MODO NO MOLESTAR ====================
 window.activarNoMolestar = function() {
