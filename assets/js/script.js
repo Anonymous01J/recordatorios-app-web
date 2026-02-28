@@ -272,10 +272,7 @@ async function enviarNotificacion(notificacion) {
         options.actions.push({ action: 'pirata', title: '🏴‍☠️ ¡Soy Garfio!' });
     }
 
-    const OneSignal = window.OneSignal;
-    if (OneSignal && await OneSignal.User.PushSubscription.optedIn) {
-        await OneSignal.Notifications.sendSelf(options);
-    } else if (Notification.permission === 'granted') {
+    if (Notification.permission === 'granted') {
         new Notification(options.title, options);
     }
 
@@ -318,10 +315,7 @@ async function enviarNotificacionPersonalizada(notif) {
         ]
     };
 
-    const OneSignal = window.OneSignal;
-    if (OneSignal && await OneSignal.User.PushSubscription.optedIn) {
-        await OneSignal.Notifications.sendSelf(options);
-    } else if (Notification.permission === 'granted') {
+    if (Notification.permission === 'granted') {
         new Notification(options.title, options);
     }
 
@@ -382,8 +376,8 @@ window.enviarPrueba = async function() {
     };
 
     try {
-        if (OneSignal && await OneSignal.User.PushSubscription.optedIn) {
-            await OneSignal.Notifications.sendSelf(options);
+        if (Notification.permission === 'granted') {
+            new Notification(options.title, options);
             showMessage('✅ Notificación de prueba enviada', 'success');
             agregarAlHistorial({
                 id: 'prueba',
@@ -396,9 +390,6 @@ window.enviarPrueba = async function() {
                 leida: false,
                 completado: false
             });
-        } else if (Notification.permission === 'granted') {
-            new Notification(options.title, options);
-            showMessage('✅ Notificación local enviada', 'success');
         } else {
             showMessage('❌ Permiso denegado para notificaciones', 'error');
         }
