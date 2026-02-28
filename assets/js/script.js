@@ -144,15 +144,27 @@ function configurarListeners(OneSignal) {
 
 async function verificarSuscripcion() {
     const OneSignal = window.OneSignal;
-    if (!OneSignal) return;
 
-    try {
-        const subscription = await OneSignal.User.PushSubscription;
-        appState.suscrito = subscription && subscription.optedIn === true;
-    } catch (error) {
+    // Fuente de verdad: permiso del navegador + optedIn de OneSignal
+    const permisoNavegador = Notification.permission === 'granted';
+
+    if (!OneSignal || !permisoNavegador) {
         appState.suscrito = false;
+        guardarEstado();
+        renderizarEstado();
+        return;
     }
 
+    try {
+        // PushSubscription es un objeto sincrónico en SDK v16, no una promesa
+        const optedIn = OneSignal.User.PushSubscription.optedIn;
+        appState.suscrito = permisoNavegador && (optedIn === true || optedIn === undefined);
+    } catch (error) {
+        // Si falla OneSignal pero el navegador tiene permiso, consideramos suscrito
+        appState.suscrito = permisoNavegador;
+    }
+
+    guardarEstado();
     renderizarEstado();
 }
 
