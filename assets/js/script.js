@@ -1,5 +1,5 @@
 // ==================== CONFIGURACIÓN ====================
-const ONE_SIGNAL_APP_ID = 'e9ec8803-b4a6-4235-b1a3-8052ae76dc04';
+const ONE_SIGNAL_APP_ID = '6b37a1cf-ee9d-4941-8ca0-eb7bef3fbc75';
 
 // Definición de las dos notificaciones base
 const NOTIFICACIONES = {
@@ -100,16 +100,18 @@ function inicializarOneSignal() {
                 title: "💊 ¡Notificaciones activadas!",
                 message: "Te recordaré tu suplemento y parche cada día 😉"
             }
-            OneSignal.Notifications.addEventListener("click", (event) => {
-            const actionId = event.result.actionId; 
-            const tipo = event.notification.data ? event.notification.data.tipo : null;
+        });
 
+        OneSignal.Notifications.addEventListener("click", (event) => {
+            const actionId = event.result.actionId;
+            const tipo = event.notification.data ? event.notification.data.tipo : null;
             if (actionId === 'done' || actionId === 'pirata') {
                 marcarComoCompletado(tipo || 'suplemento');
             } else if (actionId === 'snooze') {
-                programarRecordatorio(tipo || 'suplemento', 180); // 3 horas
+                programarRecordatorio(tipo || 'suplemento', 10);
             }
         });
+
         await verificarSuscripcion();
     });
 }
@@ -165,31 +167,65 @@ function verificarNotificaciones() {
     if (!appState.suscrito || appState.dndActivo) return;
 
     const ahora = new Date();
-    const hoy = ahora.toDateString(); // Formato: "Sat Feb 28 2026"
     const horaActual = ahora.getHours();
     const minutoActual = ahora.getMinutes();
 
-    // NUEVA LÓGICA: Revisar si en el historial de hoy ya existe un suplemento COMPLETADO
-    const suplementoYaHecho = appState.historial.some(n => 
-        n.tipo_id === 'suplemento' && n.fecha_raw === hoy && n.completado === true
-    );
-
-    // Suplemento (Solo suena si NO está hecho)
-    if (NOTIFICACIONES.suplemento.activa && !suplementoYaHecho) {
-        const s = NOTIFICACIONES.suplemento;
-        if (horaActual >= s.horaInicio && horaActual <= s.horaFin) {
-            if ((horaActual - s.horaInicio) % s.intervalo === 0 && minutoActual === 0) {
-                enviarNotificacion(s);
+    // Suplemento (cada 3h)
+    const suplemento = NOTIFICACIONES.suplemento;
+    if (suplemento.activa) {
+        if (horaActual >= suplemento.horaInicio && horaActual <= suplemento.horaFin) {
+            const horasDesdeInicio = horaActual - suplemento.horaInicio;
+            if (horasDesdeInicio % suplemento.intervalo === 0 && minutoActual === 0) {
+                const ultimaHora = suplemento.ultimaNotificacion ? new Date(suplemento.ultimaNotificacion).getHours() : -1;
+                if (ultimaHora !== horaActual) {
+                    enviarNotificacion(suplemento);
+                }
             }
         }
     }
 
-    // Parche
-    if (NOTIFICACIONES.parche.activa && !NOTIFICACIONES.parche.notificadoHoy) {
-        if (horaActual === NOTIFICACIONES.parche.horaUnica && minutoActual === 0) {
-            enviarNotificacion(NOTIFICACIONES.parche);
+    // Parche (9pm)
+    const parche = NOTIFICACIONES.parche;
+    if (parche.activa && !parche.notificadoHoy) {
+        if (horaActual === parche.horaUnica && minutoActual === 0) {
+            enviarNotificacion(parche);
+            parche.notificadoHoy = true;
+            appState.fechaUltimoParche = new Date().toDateString();
+            guardarEstado();
         }
     }
+
+    // Notificaciones personalizadas
+    const hoy = new Date().toDateString();
+    appState.notificacionesPersonalizadas.forEach(notif => {
+        if (!notif.activa) return;
+
+        if (notif.tipo === 'diario') {
+            if (!notif.notificadoHoy && horaActual === notif.hora && minutoActual === 0) {
+                enviarNotificacionPersonalizada(notif);
+                notif.notificadoHoy = true;
+                notif.fechaUltimaNotif = hoy;
+                guardarEstado();
+            }
+        } else if (notif.tipo === 'periodico') {
+            const horasDesde = horaActual - (notif.horaInicio || 8);
+            if (horaActual >= (notif.horaInicio || 8) &&
+                horaActual <= (notif.horaFin || 22) &&
+                horasDesde % notif.intervalo === 0 &&
+                minutoActual === 0) {
+                const ultimaHora = notif.ultimaNotificacion ? new Date(notif.ultimaNotificacion).getHours() : -1;
+                if (ultimaHora !== horaActual) {
+                    enviarNotificacionPersonalizada(notif);
+                }
+            }
+        } else if (notif.tipo === 'unica') {
+            if (!notif.enviada && horaActual === notif.hora && minutoActual === 0) {
+                enviarNotificacionPersonalizada(notif);
+                notif.enviada = true;
+                guardarEstado();
+            }
+        }
+    });
 }
 
 async function enviarNotificacion(notificacion) {
@@ -294,37 +330,14 @@ function programarRecordatorio(tipo, minutos) {
 }
 
 function marcarComoCompletado(tipo) {
-    const ahora = new Date();
-    const hoy = ahora.toDateString();
-
-    // Buscar si ya existe una entrada de hoy para este tipo que no esté completada
-    let item = appState.historial.find(n => n.tipo_id === tipo && n.fecha_raw === hoy && !n.completado);
-
-    if (item) {
-        item.completado = true;
-    } else {
-        // Si no hay registro (ej. clic desde notificación de Vercel), creamos uno nuevo ya completado
-        agregarAlHistorial({
-            tipo_id: tipo,
-            titulo: tipo === 'suplemento' ? "💊 Suplemento" : "🏴‍☠️ Parche",
-            mensaje: "Marcado como completado",
-            icono: tipo === 'suplemento' ? "💊" : "🪝",
-            hora: formatHour(ahora.getHours()),
-            fecha: ahora.toLocaleDateString(),
-            fecha_raw: hoy,
-            completado: true
-        });
+    const notif = appState.historial.find(n => n.id === tipo && !n.completado);
+    if (notif) {
+        notif.completado = true;
+        localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
+        renderizarHistorial();
     }
-
-    if (tipo === 'parche') {
-        NOTIFICACIONES.parche.notificadoHoy = true;
-        appState.fechaUltimoParche = hoy;
-    }
-
-    guardarEstado();
-    renderizarUI();
-    showMessage(`✅ ${tipo.toUpperCase()} registrado para hoy`, 'success');
 }
+
 // ==================== NOTIFICACIÓN DE PRUEBA ====================
 window.enviarPrueba = async function() {
     if (!appState.suscrito) {
@@ -702,14 +715,9 @@ window.toggleNotificacionPersonalizada = function(id) {
 
 // ==================== HISTORIAL ====================
 function agregarAlHistorial(item) {
-    // Importante: usamos 'tipo_id' y 'fecha_raw' para las validaciones
-    appState.historial.unshift({ 
-        ...item, 
-        id: Date.now(), 
-        fecha_raw: item.fecha_raw || new Date().toDateString() 
-    });
+    appState.historial.unshift({ ...item, id: Date.now() });
     if (appState.historial.length > 50) appState.historial.pop();
-    guardarEstado();
+    localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
     renderizarHistorial();
 }
 
