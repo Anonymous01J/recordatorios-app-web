@@ -50,16 +50,20 @@ self.addEventListener('notificationclick', function(event) {
     const iconos = { suplemento: '💊', parche: '🪝' };
     const ahora  = new Date();
 
+    // Edge/OneSignal a veces no expone notif.title — usamos data.titulo como fallback
+    const titulo  = notif.title  || data.titulo  || '🔔 Recordatorio';
+    const mensaje = notif.body   || data.mensaje  || '';
+
     const item = {
         id:         ahora.getTime(),
         idTipo:     tipo,
-        titulo:     notif.title || '🔔 Recordatorio',
-        mensaje:    notif.body  || '',
+        titulo,
+        mensaje,
         icono:      iconos[tipo] || '🔔',
         hora:       formatHourSW(ahora.getHours()),
         fecha:      ahora.toLocaleDateString(),
         timestamp:  ahora.toISOString(),
-        completado: action === 'done',
+        completado: false,   // siempre false al registrar; se marca después con MARK_DONE
         omitida:    false
     };
 
@@ -67,8 +71,11 @@ self.addEventListener('notificationclick', function(event) {
         event.waitUntil(
             guardarEnHistorial(item).then(() =>
                 self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+                    // Primero NUEVA_NOTIF para insertar en historial, luego MARK_DONE para marcarlo
                     notificarPagina(clients, tipo, item);
-                    clients.forEach(c => c.postMessage({ type: 'MARK_DONE', tipo }));
+                    setTimeout(() => {
+                        clients.forEach(c => c.postMessage({ type: 'MARK_DONE', tipo }));
+                    }, 100);
                     if (clients.length === 0) return self.clients.openWindow('/');
                 })
             )

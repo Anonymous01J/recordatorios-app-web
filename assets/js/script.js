@@ -154,6 +154,12 @@ function cargarEstadoGuardado() {
         appState.fechaUltimoParche = hoy;
     }
 
+    // Resetear contadores si es un nuevo día
+    if (appState.fechaContador !== hoy) {
+        appState.notificacionesHoy = { suplemento: 0, parche: 0 };
+        appState.fechaContador = hoy;
+    }
+
     if (!appState.notificacionesPersonalizadas) {
         appState.notificacionesPersonalizadas = [];
     }
