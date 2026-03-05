@@ -34,20 +34,20 @@ function formatHourSW(hour) {
 }
 
 // ==================== PUSH: registrar en historial al recibir ====================
-self.addEventListener('push', function(event) {
-    // OneSignal maneja el show de la notificación; nosotros solo guardamos en historial
-    let data = {};
-    try { data = event.data ? event.data.json() : {}; } catch(e) {}
-
-    const ahora    = new Date();
-    const tipo     = (data.custom && data.custom.a && data.custom.a.tipo) || 'suplemento';
-    const iconos   = { suplemento: '💊', parche: '🪝' };
+// Usamos notificationclick en vez de push para no interferir con el handler de OneSignal.
+// El registro en historial se hace cuando aparece la notificación (notificationshow).
+self.addEventListener('notificationshow', function(event) {
+    const notif  = event.notification;
+    const data   = notif.data || {};
+    const tipo   = data.tipo || 'suplemento';
+    const iconos = { suplemento: '💊', parche: '🪝' };
+    const ahora  = new Date();
 
     const item = {
         id:         ahora.getTime(),
         idTipo:     tipo,
-        titulo:     (data.headings && (data.headings.es || data.headings.en)) || '🔔 Recordatorio',
-        mensaje:    (data.contents && (data.contents.es || data.contents.en)) || '',
+        titulo:     notif.title || '🔔 Recordatorio',
+        mensaje:    notif.body  || '',
         icono:      iconos[tipo] || '🔔',
         hora:       formatHourSW(ahora.getHours()),
         fecha:      ahora.toLocaleDateString(),
@@ -57,12 +57,11 @@ self.addEventListener('push', function(event) {
     };
 
     event.waitUntil(
-        guardarEnHistorial(item).then(() => {
-            // Avisar a la página si está abierta para que refresque el historial
-            return self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+        guardarEnHistorial(item).then(() =>
+            self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
                 clients.forEach(c => c.postMessage({ type: 'NUEVA_NOTIF', item }));
-            });
-        })
+            })
+        )
     );
 });
 
