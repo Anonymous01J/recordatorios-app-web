@@ -64,15 +64,24 @@ function escucharMensajesServiceWorker() {
     navigator.serviceWorker.addEventListener('message', event => {
         const { type, tipo, item } = event.data || {};
 
-        if (type === 'MARK_DONE') {
-            marcarComoCompletadoDB(tipo || 'suplemento');
-            showMessage('✅ ¡Marcado como hecho!', 'success');
-        }
-
         if (type === 'NUEVA_NOTIF' && item) {
             appState.historial.unshift(item);
             if (appState.historial.length > 50) appState.historial.pop();
             renderizarHistorial();
+            renderizarNotificaciones();
+        }
+
+        if (type === 'MARK_DONE') {
+            // Buscar el item más reciente del mismo tipo y marcarlo
+            const idTipo = tipo || 'suplemento';
+            const target = appState.historial.find(n => n.idTipo === idTipo && !n.completado);
+            if (target) {
+                target.completado = true;
+                guardarItemEnDB(target);
+                renderizarHistorial();
+                renderizarNotificaciones();
+            }
+            showMessage('✅ ¡Marcado como hecho!', 'success');
         }
 
         if (type === 'INCREMENTAR_CONTADOR' && event.data.idTipo) {
@@ -251,11 +260,12 @@ window.suscribir = async function() {
         await OneSignal.Notifications.requestPermission();
         setTimeout(async () => {
             await verificarSuscripcion();
-            // Inicializar tags con el estado actual de los switches
+            // Inicializar tags con el estado actual de los switches y DND
             try {
                 Object.keys(NOTIFICACIONES).forEach(id => {
                     OneSignal.User.addTag(id, NOTIFICACIONES[id].activa ? '1' : '0');
                 });
+                OneSignal.User.addTag('dnd', appState.dndActivo ? '1' : '0');
             } catch(e) { console.warn('OneSignal tag init error:', e); }
         }, 1500);
     }
@@ -463,11 +473,21 @@ function marcarComoCompletado(tipo) {
 
 
 // ==================== MODO NO MOLESTAR ====================
+function setDndTag(activo) {
+    try {
+        const OneSignal = window.OneSignal;
+        if (OneSignal && OneSignal.User && OneSignal.User.addTag) {
+            OneSignal.User.addTag('dnd', activo ? '1' : '0');
+        }
+    } catch(e) { console.warn('OneSignal dnd tag error:', e); }
+}
+
 window.activarNoMolestar = function() {
     const finDelDia = new Date();
     finDelDia.setHours(23, 59, 59, 999);
     appState.dndActivo = true;
     appState.dndExpira = finDelDia.toISOString();
+    setDndTag(true);
     guardarEstado();
     renderizarUI();
     showMessage('🔕 Modo No Molestar activo hasta medianoche', 'info');
@@ -476,6 +496,7 @@ window.activarNoMolestar = function() {
 window.desactivarNoMolestar = function() {
     appState.dndActivo = false;
     appState.dndExpira = null;
+    setDndTag(false);
     guardarEstado();
     renderizarUI();
     showMessage('🔔 Modo No Molestar desactivado', 'success');
@@ -607,7 +628,7 @@ function renderizarNotificaciones() {
             </div>
             <div class="notif-schedule">📅 12:00 PM · 3:00 PM · 6:00 PM · 9:00 PM</div>
             <div class="notif-stats">
-                ${appState.historial.some(h => h.idTipo === 'suplemento' && h.completado && h.fecha === new Date().toLocaleDateString()) ?
+                ${appState.historial.some(h => h.idTipo === 'suplemento' && h.completado && h.timestamp && h.timestamp.startsWith(new Date().toISOString().slice(0,10))) ?
                     '<span class="badge done">✅ Completado</span>' :
                     '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
@@ -626,7 +647,7 @@ function renderizarNotificaciones() {
             </div>
             <div class="notif-schedule">📅 9:00 PM — una vez al día</div>
             <div class="notif-stats">
-                ${appState.historial.some(h => h.idTipo === 'parche' && h.completado && h.fecha === new Date().toLocaleDateString()) ?
+                ${appState.historial.some(h => h.idTipo === 'parche' && h.completado && h.timestamp && h.timestamp.startsWith(new Date().toISOString().slice(0,10))) ?
                     '<span class="badge done">✅ Completado</span>' :
                     '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
@@ -672,7 +693,7 @@ function renderizarControlesNoMolestar() {
         container.innerHTML = `
             <div class="dnd-banner">
                 <span>🔕 No Molestar activo hasta ${expira.toLocaleTimeString()}</span>
-                <button onclick="desactivarNoMolestar()" class="btn-small">❌ Desactivar</button>
+                <button onclick="desactivarNoMolestar()" class="btn btn-outline">❌ Desactivar</button>
             </div>`;
     } else {
         container.innerHTML = `
@@ -744,7 +765,6 @@ function renderizarHistorial() {
 
     container.innerHTML = appState.historial.slice(0, 10).map(item => `
         <div class="historial-item ${item.omitida ? 'omitida' : ''} ${item.completado ? 'completado' : ''}">
-            <div class="historial-icon">${item.icono || '🔔'}</div>
             <div class="historial-content">
                 <div class="historial-header">
                     <span class="historial-title">${item.titulo}</span>
