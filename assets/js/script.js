@@ -156,9 +156,23 @@ function cargarEstadoGuardado() {
     });
 
     // El historial se carga por separado desde IndexedDB en cargarHistorialDesdeDB()
+
+    // Restaurar estado activa de notificaciones base
+    if (appState.notificacionesBaseActiva) {
+        Object.keys(appState.notificacionesBaseActiva).forEach(id => {
+            if (NOTIFICACIONES[id]) {
+                NOTIFICACIONES[id].activa = appState.notificacionesBaseActiva[id];
+            }
+        });
+    }
 }
 
 function guardarEstado() {
+    // Persistir también el estado activa de las notificaciones base
+    appState.notificacionesBaseActiva = {
+        suplemento: NOTIFICACIONES.suplemento.activa,
+        parche:     NOTIFICACIONES.parche.activa
+    };
     localStorage.setItem('appState', JSON.stringify(appState));
 }
 
@@ -219,7 +233,15 @@ window.suscribir = async function() {
     const OneSignal = window.OneSignal;
     if (OneSignal) {
         await OneSignal.Notifications.requestPermission();
-        setTimeout(async () => { await verificarSuscripcion(); }, 1000);
+        setTimeout(async () => {
+            await verificarSuscripcion();
+            // Inicializar tags con el estado actual de los switches
+            try {
+                Object.keys(NOTIFICACIONES).forEach(id => {
+                    OneSignal.User.addTag(id, NOTIFICACIONES[id].activa ? '1' : '0');
+                });
+            } catch(e) { console.warn('OneSignal tag init error:', e); }
+        }, 1500);
     }
 };
 
@@ -774,11 +796,21 @@ function actualizarContadores() {
 window.toggleNotificacion = function(id) {
     if (NOTIFICACIONES[id]) {
         NOTIFICACIONES[id].activa = !NOTIFICACIONES[id].activa;
+        const activa = NOTIFICACIONES[id].activa;
+
+        // Actualizar tag en OneSignal para que el backend filtre correctamente
+        try {
+            const OneSignal = window.OneSignal;
+            if (OneSignal && OneSignal.User && OneSignal.User.addTag) {
+                OneSignal.User.addTag(id, activa ? '1' : '0');
+            }
+        } catch(e) { console.warn('OneSignal tag error:', e); }
+
         guardarEstado();
         renderizarNotificaciones();
         renderizarProximasNotificaciones();
         const nombre = id === 'suplemento' ? 'del suplemento' : 'del parche';
-        showMessage(NOTIFICACIONES[id].activa ? `✅ Recordatorio ${nombre} activado` : `❌ Recordatorio ${nombre} desactivado`, 'info');
+        showMessage(activa ? `✅ Recordatorio ${nombre} activado` : `❌ Recordatorio ${nombre} desactivado`, 'info');
     }
 };
 
