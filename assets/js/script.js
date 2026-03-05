@@ -70,10 +70,20 @@ function escucharMensajesServiceWorker() {
         }
 
         if (type === 'NUEVA_NOTIF' && item) {
-            // El SW guardó en IndexedDB; refrescamos la UI
             appState.historial.unshift(item);
             if (appState.historial.length > 50) appState.historial.pop();
             renderizarHistorial();
+        }
+
+        if (type === 'INCREMENTAR_CONTADOR' && event.data.idTipo) {
+            const id = event.data.idTipo;
+            if (appState.notificacionesHoy[id] !== undefined) {
+                appState.notificacionesHoy[id]++;
+            } else {
+                appState.notificacionesHoy[id] = 1;
+            }
+            guardarEstado();
+            actualizarContadores();
         }
     });
 }

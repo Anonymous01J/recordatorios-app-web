@@ -3,7 +3,7 @@ importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 // Horas programadas para el suplemento (hora local Venezuela UTC-4)
 const HORAS_SUPLEMENTO = [12, 15, 18, 21];
 
-// ==================== INDEXEDDB (accesible desde SW) ====================
+// ==================== INDEXEDDB ====================
 function abrirDB() {
     return new Promise((resolve, reject) => {
         const req = indexedDB.open('recordatoriosDB', 1);
@@ -16,15 +16,12 @@ function abrirDB() {
 }
 
 function guardarEnHistorial(item) {
-    return abrirDB().then(db => {
-        return new Promise((resolve, reject) => {
-            const tx    = db.transaction('historial', 'readwrite');
-            const store = tx.objectStore('historial');
-            store.put(item);
-            tx.oncomplete = resolve;
-            tx.onerror    = e => reject(e.target.error);
-        });
-    });
+    return abrirDB().then(db => new Promise((resolve, reject) => {
+        const tx = db.transaction('historial', 'readwrite');
+        tx.objectStore('historial').put(item);
+        tx.oncomplete = resolve;
+        tx.onerror    = e => reject(e.target.error);
+    }));
 }
 
 function formatHourSW(hour) {
@@ -33,52 +30,104 @@ function formatHourSW(hour) {
     return hour > 12 ? `${hour - 12}:00 PM` : `${hour}:00 AM`;
 }
 
-// ==================== PUSH: registrar en historial al recibir ====================
-// OneSignal ya maneja el showNotification; nosotros solo guardamos en IndexedDB.
-// Encadenamos nuestro waitUntil sin interferir con el suyo.
-self.addEventListener('push', function(event) {
-    let payload = {};
-    try { payload = event.data ? event.data.json() : {}; } catch(e) {}
+function notificarPagina(clients, tipo, item) {
+    clients.forEach(c => {
+        c.postMessage({ type: 'NUEVA_NOTIF', item });
+        if (tipo) c.postMessage({ type: 'INCREMENTAR_CONTADOR', idTipo: tipo });
+    });
+}
 
-    // OneSignal empaqueta los datos del campo `data` dentro de custom.a
-    const custom  = (payload.custom && payload.custom.a) || {};
-    const tipo    = custom.tipo || 'suplemento';
-    const iconos  = { suplemento: '💊', parche: '🪝' };
-    const ahora   = new Date();
+// ==================== NOTIFICATIONCLICK ====================
+// Punto de captura único y confiable en Edge, Chrome y Firefox.
+// Aquí siempre tenemos title, body y data completos.
+self.addEventListener('notificationclick', function(event) {
+    event.notification.close();
 
-    const titulo  = (payload.headings && (payload.headings.es || payload.headings.en)) || '🔔 Recordatorio';
-    const mensaje = (payload.contents && (payload.contents.es || payload.contents.en)) || '';
+    const action = event.action;
+    const notif  = event.notification;
+    const data   = notif.data || {};
+    const tipo   = data.tipo || 'suplemento';
+    const iconos = { suplemento: '💊', parche: '🪝' };
+    const ahora  = new Date();
 
     const item = {
         id:         ahora.getTime(),
         idTipo:     tipo,
-        titulo,
-        mensaje,
+        titulo:     notif.title || '🔔 Recordatorio',
+        mensaje:    notif.body  || '',
         icono:      iconos[tipo] || '🔔',
         hora:       formatHourSW(ahora.getHours()),
         fecha:      ahora.toLocaleDateString(),
         timestamp:  ahora.toISOString(),
-        completado: false,
+        completado: action === 'done',
         omitida:    false
     };
 
-    // Guardamos en IndexedDB y notificamos a la página si está abierta.
-    // NO llamamos showNotification aquí — OneSignal lo hace por su cuenta.
-    event.waitUntil(
-        guardarEnHistorial(item).then(() =>
-            self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-                clients.forEach(c => c.postMessage({ type: 'NUEVA_NOTIF', item }));
-            })
-        )
-    );
-});
+    if (action === 'done') {
+        event.waitUntil(
+            guardarEnHistorial(item).then(() =>
+                self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+                    notificarPagina(clients, tipo, item);
+                    clients.forEach(c => c.postMessage({ type: 'MARK_DONE', tipo }));
+                    if (clients.length === 0) return self.clients.openWindow('/');
+                })
+            )
+        );
 
-/**
- * Calcula cuántos milisegundos faltan para el próximo intervalo del suplemento.
- * Si ya pasaron todos los del día, devuelve null (no reagenda).
- */
+    } else if (action === 'snooze') {
+        let ms;
+        if (tipo === 'suplemento') {
+            ms = msParaProximoIntervalo();
+            if (ms === null) return;
+        } else {
+            ms = 15 * 60 * 1000;
+        }
+
+        // Guardar en historial igualmente (el usuario lo vio)
+        event.waitUntil(
+            guardarEnHistorial(item).then(() =>
+                self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+                    notificarPagina(clients, tipo, item);
+                }).then(() => new Promise(resolve => {
+                    setTimeout(() => {
+                        self.registration.showNotification(notif.title, {
+                            body:             notif.body,
+                            icon:             notif.icon,
+                            data:             notif.data,
+                            requireInteraction: true,
+                            vibrate:          [300, 200, 300],
+                            actions: [
+                                { action: 'done',   title: '✅ ¡Hecho!' },
+                                { action: 'snooze', title: tipo === 'suplemento' ? '⏰ Recordarme luego' : '⏰ Recordarme en 15 min' }
+                            ]
+                        });
+                        resolve();
+                    }, ms);
+                }))
+            )
+        );
+
+    } else {
+        // Clic en el cuerpo — abrir/enfocar app y registrar
+        event.waitUntil(
+            guardarEnHistorial(item).then(() =>
+                self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+                    notificarPagina(clients, tipo, item);
+                    const appClient = clients.find(c => c.url.includes(self.location.origin));
+                    if (appClient) {
+                        appClient.focus();
+                    } else {
+                        return self.clients.openWindow('/');
+                    }
+                })
+            )
+        );
+    }
+}, false);
+
+// ==================== SNOOZE: calcular próximo intervalo ====================
 function msParaProximoIntervalo() {
-    const ahora = new Date();
+    const ahora     = new Date();
     const utcOffset = ahora.getTimezoneOffset() * 60000;
     const venezolana = new Date(ahora.getTime() + utcOffset - 4 * 3600000);
 
@@ -87,76 +136,8 @@ function msParaProximoIntervalo() {
     const segVE  = venezolana.getSeconds();
 
     const proxima = HORAS_SUPLEMENTO.find(h => h > horaVE);
-    if (proxima === undefined) return null; // No quedan intervalos hoy
+    if (proxima === undefined) return null;
 
-    const minutosHastaProxima = (proxima - horaVE) * 60 - minVE;
-    const segundosHastaProxima = minutosHastaProxima * 60 - segVE;
-    return segundosHastaProxima * 1000;
+    const segundos = (proxima - horaVE) * 3600 - minVE * 60 - segVE;
+    return segundos * 1000;
 }
-
-self.addEventListener('notificationclick', function(event) {
-    event.notification.close();
-
-    const action = event.action;
-    const data   = event.notification.data || {};
-    const tipo   = data.tipo || 'suplemento';
-
-    if (action === 'done') {
-        // Notificar a la página que marque como hecho
-        event.waitUntil(
-            self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-                clients.forEach(client => {
-                    client.postMessage({ type: 'MARK_DONE', tipo });
-                });
-
-                // Si no hay ventana abierta, ábrela
-                if (clients.length === 0) {
-                    return self.clients.openWindow('/');
-                }
-            })
-        );
-
-    } else if (action === 'snooze') {
-        // Suplemento → próximo intervalo programado; otros → 15 minutos fijos
-        let ms;
-        if (tipo === 'suplemento') {
-            ms = msParaProximoIntervalo();
-            if (ms === null) return; // No quedan más intervalos hoy
-        } else {
-            ms = 15 * 60 * 1000; // 15 minutos
-        }
-
-        event.waitUntil(
-            new Promise(resolve => {
-                setTimeout(() => {
-                    self.registration.showNotification(event.notification.title, {
-                        body: event.notification.body,
-                        icon: event.notification.icon,
-                        data: event.notification.data,
-                        requireInteraction: true,
-                        vibrate: [300, 200, 300],
-                        actions: [
-                            { action: 'done',   title: '✅ ¡Hecho!' },
-                            { action: 'snooze', title: tipo === 'suplemento' ? '⏰ Recordarme luego' : '⏰ Recordarme en 15 min' }
-                        ]
-                    });
-                    resolve();
-                }, ms);
-            })
-        );
-
-    } else {
-        // Clic en el cuerpo de la notificación — abrir/enfocar la app
-        event.waitUntil(
-            self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-                const appClient = clients.find(c => c.url.includes(self.location.origin));
-                if (appClient) {
-                    appClient.focus();
-                    appClient.postMessage({ type: 'MARK_DONE', tipo });
-                } else {
-                    return self.clients.openWindow('/');
-                }
-            })
-        );
-    }
-}, false);
