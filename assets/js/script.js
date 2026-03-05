@@ -814,7 +814,6 @@ function renderizarHistorial() {
 
     container.innerHTML = appState.historial.slice(0, 10).map(item => `
         <div class="historial-item ${item.omitida ? 'omitida' : ''} ${item.completado ? 'completado' : ''}">
-            <div class="historial-icon">${item.icono || '🔔'}</div>
             <div class="historial-content">
                 <div class="historial-header">
                     <span class="historial-title">${item.titulo}</span>
