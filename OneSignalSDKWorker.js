@@ -65,7 +65,7 @@ async function reprogramarSiCorresponde(data, notifTitle, notifBody, notifIcon) 
     }
 
     try {
-        await fetch('https://recordatorios-backend-by-anonymous01j.vercel.app/api/schedule', {
+        await fetch('https://recordatorios-backend-by-anonymous0.vercel.app/api/schedule', {
             method:  'POST',
             headers: { 'Content-Type': 'application/json' },
             body:    JSON.stringify({ playerId, notif })
