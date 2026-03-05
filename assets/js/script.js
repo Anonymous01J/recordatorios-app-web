@@ -460,51 +460,7 @@ function marcarComoCompletado(tipo) {
     guardarEstado();
 }
 
-// ==================== NOTIFICACIÓN DE PRUEBA ====================
-window.enviarPrueba = async function() {
-    if (!appState.suscrito) {
-        showMessage('❌ Debes activar las notificaciones primero', 'error');
-        return;
-    }
 
-    const ahora = new Date();
-    const horaStr = formatHour(ahora.getHours());
-
-    const options = {
-        title: "🧪 Notificación de prueba",
-        body: "Si ves esto, las notificaciones funcionan correctamente!",
-        icon: window.location.origin + '/icon-192x192.png',
-        data: { tipo: 'suplemento', hora: ahora.getHours() }, // tipo suplemento para probar los dos botones
-        requireInteraction: false,
-        vibrate: [200, 100, 200],
-        actions: [
-            { action: 'done',   title: '✅ ¡Hecho!' },
-            { action: 'snooze', title: '⏰ Recordarme luego' }
-        ]
-    };
-
-    try {
-        if (Notification.permission === 'granted') {
-            new Notification(options.title, options);
-            showMessage('✅ Notificación de prueba enviada', 'success');
-            agregarAlHistorial({
-                id: 'prueba',
-                titulo: "🧪 Notificación de prueba",
-                mensaje: "Prueba manual",
-                icono: "🧪",
-                hora: horaStr,
-                fecha: ahora.toLocaleDateString(),
-                timestamp: ahora.toISOString(),
-                leida: false,
-                completado: false
-            });
-        } else {
-            showMessage('❌ Permiso denegado para notificaciones', 'error');
-        }
-    } catch (error) {
-        showMessage('❌ Error al enviar la prueba', 'error');
-    }
-};
 
 // ==================== MODO NO MOLESTAR ====================
 window.activarNoMolestar = function() {
@@ -651,8 +607,9 @@ function renderizarNotificaciones() {
             </div>
             <div class="notif-schedule">📅 12:00 PM · 3:00 PM · 6:00 PM · 9:00 PM</div>
             <div class="notif-stats">
-                <span class="stat">📊 Hoy: ${appState.notificacionesHoy.suplemento || 0}</span>
-                <span class="badge high">⚠️ Alta prioridad</span>
+                ${appState.historial.some(h => h.idTipo === 'suplemento' && h.completado && h.fecha === new Date().toLocaleDateString()) ?
+                    '<span class="badge done">✅ Completado</span>' :
+                    '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
         </div>
         <!-- Parche -->
@@ -669,10 +626,8 @@ function renderizarNotificaciones() {
             </div>
             <div class="notif-schedule">📅 9:00 PM — una vez al día</div>
             <div class="notif-stats">
-                <span class="stat">📊 Hoy: ${appState.notificacionesHoy.parche || 0}</span>
-                <span class="badge high">⚠️ Alta prioridad</span>
-                ${NOTIFICACIONES.parche.notificadoHoy ?
-                    '<span class="badge done">✅ Notificado hoy</span>' :
+                ${appState.historial.some(h => h.idTipo === 'parche' && h.completado && h.fecha === new Date().toLocaleDateString()) ?
+                    '<span class="badge done">✅ Completado</span>' :
                     '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
         </div>`;
@@ -803,10 +758,7 @@ function renderizarHistorial() {
     `).join('');
 }
 
-function actualizarContadores() {
-    document.getElementById('suplementoCount').textContent = appState.notificacionesHoy.suplemento || 0;
-    document.getElementById('parcheCount').textContent = appState.notificacionesHoy.parche || 0;
-}
+function actualizarContadores() { /* eliminado */ }
 
 // ==================== TOGGLES ====================
 window.toggleNotificacion = function(id) {
