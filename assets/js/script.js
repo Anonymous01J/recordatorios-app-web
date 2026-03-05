@@ -50,10 +50,87 @@ let appState = {
 document.addEventListener('DOMContentLoaded', async () => {
     cargarEstadoGuardado();
     inicializarOneSignal();
+    escucharMensajesServiceWorker();
+    await cargarHistorialDesdeDB(); // ← lee IndexedDB antes de renderizar
     renderizarUI();
     iniciarVerificadorNotificaciones();
     inicializarModal();
 });
+
+// ==================== LISTENER SERVICE WORKER ====================
+function escucharMensajesServiceWorker() {
+    if (!navigator.serviceWorker) return;
+
+    navigator.serviceWorker.addEventListener('message', event => {
+        const { type, tipo, item } = event.data || {};
+
+        if (type === 'MARK_DONE') {
+            marcarComoCompletadoDB(tipo || 'suplemento');
+            showMessage('✅ ¡Marcado como hecho!', 'success');
+        }
+
+        if (type === 'NUEVA_NOTIF' && item) {
+            // El SW guardó en IndexedDB; refrescamos la UI
+            appState.historial.unshift(item);
+            if (appState.historial.length > 50) appState.historial.pop();
+            renderizarHistorial();
+        }
+    });
+}
+
+// ==================== INDEXEDDB (frontend) ====================
+function abrirDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open('recordatoriosDB', 1);
+        req.onupgradeneeded = e => {
+            e.target.result.createObjectStore('historial', { keyPath: 'id' });
+        };
+        req.onsuccess = e => resolve(e.target.result);
+        req.onerror   = e => reject(e.target.error);
+    });
+}
+
+async function cargarHistorialDesdeDB() {
+    try {
+        const db = await abrirDB();
+        const items = await new Promise((resolve, reject) => {
+            const tx    = db.transaction('historial', 'readonly');
+            const req   = tx.objectStore('historial').getAll();
+            req.onsuccess = e => resolve(e.target.result);
+            req.onerror   = e => reject(e.target.error);
+        });
+        // Ordenar por timestamp desc y tomar los últimos 50
+        items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        appState.historial = items.slice(0, 50);
+    } catch(e) {
+        console.warn('IndexedDB no disponible, usando localStorage:', e);
+        const guardado = localStorage.getItem('historialNotificaciones');
+        if (guardado) appState.historial = JSON.parse(guardado);
+    }
+}
+
+async function guardarItemEnDB(item) {
+    try {
+        const db = await abrirDB();
+        await new Promise((resolve, reject) => {
+            const tx    = db.transaction('historial', 'readwrite');
+            tx.objectStore('historial').put(item);
+            tx.oncomplete = resolve;
+            tx.onerror    = e => reject(e.target.error);
+        });
+    } catch(e) {
+        // Fallback a localStorage
+        localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
+    }
+}
+
+async function marcarComoCompletadoDB(tipo) {
+    const item = appState.historial.find(n => n.idTipo === tipo && !n.completado);
+    if (!item) return;
+    item.completado = true;
+    await guardarItemEnDB(item);
+    renderizarHistorial();
+}
 
 function cargarEstadoGuardado() {
     const guardado = localStorage.getItem('appState');
@@ -78,10 +155,7 @@ function cargarEstadoGuardado() {
         }
     });
 
-    const historial = localStorage.getItem('historialNotificaciones');
-    if (historial) {
-        appState.historial = JSON.parse(historial);
-    }
+    // El historial se carga por separado desde IndexedDB en cargarHistorialDesdeDB()
 }
 
 function guardarEstado() {
@@ -102,14 +176,17 @@ function inicializarOneSignal() {
             }
         });
 
+        // Fallback: si OneSignal captura el clic antes que el SW
         OneSignal.Notifications.addEventListener("click", (event) => {
-            const actionId = event.result.actionId;
-            const tipo = event.notification.data ? event.notification.data.tipo : null;
-            if (actionId === 'done' || actionId === 'pirata') {
-                marcarComoCompletado(tipo || 'suplemento');
-            } else if (actionId === 'snooze') {
-                programarRecordatorio(tipo || 'suplemento', 10);
+            const actionId = event.result?.actionId;
+            const tipo = event.notification?.data?.tipo || 'suplemento';
+
+            if (actionId === 'done') {
+                marcarComoCompletado(tipo);
+                showMessage('✅ ¡Marcado como hecho!', 'success');
+                renderizarUI();
             }
+            // 'snooze' lo maneja el SW directamente
         });
 
         await verificarSuscripcion();
@@ -238,6 +315,16 @@ async function enviarNotificacion(notificacion) {
     const horaStr = formatHour(ahora.getHours());
     const fechaStr = ahora.toLocaleDateString();
 
+    // Botones según tipo: suplemento tiene snooze, los demás solo hecho
+    const acciones = notificacion.id === 'suplemento'
+        ? [
+            { action: 'done',   title: '✅ ¡Hecho!' },
+            { action: 'snooze', title: '⏰ Recordarme luego' }
+          ]
+        : [
+            { action: 'done', title: '✅ ¡Hecho!' }
+          ];
+
     const options = {
         title: notificacion.titulo,
         body: notificacion.mensaje,
@@ -246,15 +333,8 @@ async function enviarNotificacion(notificacion) {
         data: { tipo: notificacion.id, hora: ahora.getHours(), fecha: fechaStr },
         requireInteraction: true,
         vibrate: [300, 200, 300, 200, 300],
-        actions: [
-            { action: 'done', title: '✅ ¡Hecho!' },
-            { action: 'snooze', title: '⏰ Recordar en 10 min' }
-        ]
+        actions: acciones
     };
-
-    if (notificacion.id === 'parche') {
-        options.actions.push({ action: 'pirata', title: '🏴‍☠️ ¡Soy Garfio!' });
-    }
 
     if (Notification.permission === 'granted') {
         new Notification(options.title, options);
@@ -293,9 +373,9 @@ async function enviarNotificacionPersonalizada(notif) {
         data: { tipo: notif.id, hora: ahora.getHours() },
         requireInteraction: true,
         vibrate: [200, 100, 200],
+        // Personalizadas: solo hecho
         actions: [
-            { action: 'done', title: '✅ ¡Hecho!' },
-            { action: 'snooze', title: '⏰ En 10 min' }
+            { action: 'done', title: '✅ ¡Hecho!' }
         ]
     };
 
@@ -330,12 +410,16 @@ function programarRecordatorio(tipo, minutos) {
 }
 
 function marcarComoCompletado(tipo) {
+    // Marcar en el historial
     const notif = appState.historial.find(n => n.id === tipo && !n.completado);
     if (notif) {
         notif.completado = true;
         localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
         renderizarHistorial();
     }
+
+    // Actualizar badge de contador visual
+    guardarEstado();
 }
 
 // ==================== NOTIFICACIÓN DE PRUEBA ====================
@@ -352,10 +436,13 @@ window.enviarPrueba = async function() {
         title: "🧪 Notificación de prueba",
         body: "Si ves esto, las notificaciones funcionan correctamente!",
         icon: window.location.origin + '/icon-192x192.png',
-        data: { tipo: 'prueba', hora: ahora.getHours() },
+        data: { tipo: 'suplemento', hora: ahora.getHours() }, // tipo suplemento para probar los dos botones
         requireInteraction: false,
         vibrate: [200, 100, 200],
-        actions: [{ action: 'ok', title: '✅ Entendido' }]
+        actions: [
+            { action: 'done',   title: '✅ ¡Hecho!' },
+            { action: 'snooze', title: '⏰ Recordarme luego' }
+        ]
     };
 
     try {
@@ -405,7 +492,6 @@ function inicializarModal() {
     const modal = document.getElementById('modalNueva');
     const overlay = document.getElementById('modalOverlay');
 
-    // Mostrar/ocultar opciones de repetición según tipo
     document.getElementById('tipoRepeticion').addEventListener('change', function() {
         document.getElementById('opcionesPeriodico').style.display =
             this.value === 'periodico' ? 'block' : 'none';
@@ -413,7 +499,6 @@ function inicializarModal() {
             this.value !== 'periodico' ? 'block' : 'none';
     });
 
-    // Cerrar modal al click en overlay
     overlay.addEventListener('click', cerrarModal);
 }
 
@@ -513,7 +598,6 @@ function renderizarNotificaciones() {
     const container = document.getElementById('notificacionesContainer');
     if (!container) return;
 
-    // Cards base (suplemento y parche) — sin mensaje visible
     let html = `<div class="notificaciones-grid">
         <!-- Suplemento -->
         <div class="notificacion-card ${NOTIFICACIONES.suplemento.activa ? 'activa' : ''}">
@@ -555,7 +639,6 @@ function renderizarNotificaciones() {
             </div>
         </div>`;
 
-    // Cards personalizadas
     appState.notificacionesPersonalizadas.forEach(notif => {
         const scheduleText = notif.tipo === 'periodico'
             ? `📅 Cada ${notif.intervalo}h · ${formatHour(notif.horaInicio)} a ${formatHour(notif.horaFin)}`
@@ -614,10 +697,8 @@ function renderizarProximasNotificaciones() {
 
     const ahora = new Date();
     const horaActual = ahora.getHours();
-    const minutoActual = ahora.getMinutes();
     const proximas = [];
 
-    // Suplemento
     const suplemento = NOTIFICACIONES.suplemento;
     if (suplemento.activa) {
         for (let h = suplemento.horaInicio; h <= suplemento.horaFin; h += suplemento.intervalo) {
@@ -628,13 +709,11 @@ function renderizarProximasNotificaciones() {
         }
     }
 
-    // Parche
     const parche = NOTIFICACIONES.parche;
     if (parche.activa && !parche.notificadoHoy && parche.horaUnica > horaActual) {
         proximas.push({ icono: parche.icono, titulo: 'Parche de Garfio', horaFormateada: formatHour(parche.horaUnica), tipo: 'Una vez' });
     }
 
-    // Personalizadas
     appState.notificacionesPersonalizadas.forEach(notif => {
         if (!notif.activa) return;
         if (notif.tipo === 'diario' && !notif.notificadoHoy && notif.hora > horaActual) {
@@ -680,7 +759,7 @@ function renderizarHistorial() {
                 </div>
                 <div class="historial-message">${item.mensaje}</div>
                 ${item.omitida ? '<span class="badge omitted">🔇 Omitida</span>' : ''}
-                ${item.completado ? '<span class="badge done">✅ Completado</span>' : ''}
+                ${item.completado ? '<span class="badge done">✅ Completado</span>' : '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
         </div>
     `).join('');
@@ -714,11 +793,16 @@ window.toggleNotificacionPersonalizada = function(id) {
 };
 
 // ==================== HISTORIAL ====================
-function agregarAlHistorial(item) {
-    appState.historial.unshift({ ...item, id: Date.now() });
+async function agregarAlHistorial(item) {
+    const entrada = { ...item, id: item.id || Date.now(), idTipo: item.id };
+    appState.historial.unshift(entrada);
     if (appState.historial.length > 50) appState.historial.pop();
-    localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
+    await guardarItemEnDB(entrada);
     renderizarHistorial();
+}
+
+function marcarComoCompletado(tipo) {
+    marcarComoCompletadoDB(tipo);
 }
 
 // ==================== UTILIDADES ====================
