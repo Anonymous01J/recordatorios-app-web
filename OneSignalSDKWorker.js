@@ -34,20 +34,26 @@ function formatHourSW(hour) {
 }
 
 // ==================== PUSH: registrar en historial al recibir ====================
-// Usamos notificationclick en vez de push para no interferir con el handler de OneSignal.
-// El registro en historial se hace cuando aparece la notificación (notificationshow).
-self.addEventListener('notificationshow', function(event) {
-    const notif  = event.notification;
-    const data   = notif.data || {};
-    const tipo   = data.tipo || 'suplemento';
-    const iconos = { suplemento: '💊', parche: '🪝' };
-    const ahora  = new Date();
+// OneSignal ya maneja el showNotification; nosotros solo guardamos en IndexedDB.
+// Encadenamos nuestro waitUntil sin interferir con el suyo.
+self.addEventListener('push', function(event) {
+    let payload = {};
+    try { payload = event.data ? event.data.json() : {}; } catch(e) {}
+
+    // OneSignal empaqueta los datos del campo `data` dentro de custom.a
+    const custom  = (payload.custom && payload.custom.a) || {};
+    const tipo    = custom.tipo || 'suplemento';
+    const iconos  = { suplemento: '💊', parche: '🪝' };
+    const ahora   = new Date();
+
+    const titulo  = (payload.headings && (payload.headings.es || payload.headings.en)) || '🔔 Recordatorio';
+    const mensaje = (payload.contents && (payload.contents.es || payload.contents.en)) || '';
 
     const item = {
         id:         ahora.getTime(),
         idTipo:     tipo,
-        titulo:     notif.title || '🔔 Recordatorio',
-        mensaje:    notif.body  || '',
+        titulo,
+        mensaje,
         icono:      iconos[tipo] || '🔔',
         hora:       formatHourSW(ahora.getHours()),
         fecha:      ahora.toLocaleDateString(),
@@ -56,6 +62,8 @@ self.addEventListener('notificationshow', function(event) {
         omitida:    false
     };
 
+    // Guardamos en IndexedDB y notificamos a la página si está abierta.
+    // NO llamamos showNotification aquí — OneSignal lo hace por su cuenta.
     event.waitUntil(
         guardarEnHistorial(item).then(() =>
             self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
