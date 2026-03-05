@@ -229,10 +229,34 @@ function inicializarOneSignal() {
         });
 
         await verificarSuscripcion();
+
+        // Guardar Player ID para usarlo al programar notificaciones personalizadas
+        try {
+            const pid = OneSignal.User.PushSubscription.id;
+            if (pid) {
+                appState.playerId = pid;
+                guardarEstado();
+            }
+        } catch(e) { console.warn('Player ID error:', e); }
     });
 }
 
 function configurarListeners() {}
+
+async function getPlayerId() {
+    try {
+        const OneSignal = window.OneSignal;
+        if (OneSignal) {
+            const pid = OneSignal.User.PushSubscription.id;
+            if (pid) {
+                appState.playerId = pid;
+                guardarEstado();
+                return pid;
+            }
+        }
+    } catch(e) {}
+    return appState.playerId || null;
+}
 
 async function verificarSuscripcion() {
     const permisoNavegador = Notification.permission === 'granted';
@@ -536,11 +560,11 @@ function limpiarFormulario() {
     document.getElementById('opcionesHora').style.display = 'block';
 }
 
-window.guardarNotificacionPersonalizada = function() {
+window.guardarNotificacionPersonalizada = async function() {
     const titulo = document.getElementById('nuevaTitulo').value.trim();
     const mensaje = document.getElementById('nuevaMensaje').value.trim();
-    const icono = document.getElementById('nuevoIcono').value.trim() || '🔔';
-    const tipo = document.getElementById('tipoRepeticion').value;
+    const icono   = document.getElementById('nuevoIcono').value.trim() || '🔔';
+    const tipo    = document.getElementById('tipoRepeticion').value;
 
     if (!titulo || !mensaje) {
         showMessage('❌ Título y mensaje son obligatorios', 'error');
@@ -548,21 +572,21 @@ window.guardarNotificacionPersonalizada = function() {
     }
 
     const nuevaNotif = {
-        id: 'custom_' + Date.now(),
-        titulo: icono + ' ' + titulo,
+        id:                 'custom_' + Date.now(),
+        titulo:             icono + ' ' + titulo,
         mensaje,
         icono,
-        activa: true,
+        activa:             true,
         tipo,
-        notificadoHoy: false,
+        notificadoHoy:      false,
         ultimaNotificacion: null,
-        esBase: false
+        esBase:             false
     };
 
     if (tipo === 'periodico') {
         nuevaNotif.horaInicio = parseInt(document.getElementById('horaInicioPeriodico').value) || 8;
-        nuevaNotif.horaFin = parseInt(document.getElementById('horaFinPeriodico').value) || 22;
-        nuevaNotif.intervalo = parseInt(document.getElementById('intervaloPeriodico').value) || 2;
+        nuevaNotif.horaFin    = parseInt(document.getElementById('horaFinPeriodico').value)    || 22;
+        nuevaNotif.intervalo  = parseInt(document.getElementById('intervaloPeriodico').value)  || 2;
     } else {
         nuevaNotif.hora = parseInt(document.getElementById('horaUnica').value) || 9;
     }
@@ -571,7 +595,32 @@ window.guardarNotificacionPersonalizada = function() {
     guardarEstado();
     renderizarNotificaciones();
     cerrarModal();
-    showMessage('✅ Recordatorio creado', 'success');
+
+    // Programar en OneSignal via backend
+    const playerId = await getPlayerId();
+    if (!playerId) {
+        showMessage('✅ Recordatorio guardado (activo solo con app abierta — activa notificaciones para 2do plano)', 'info');
+        return;
+    }
+
+    try {
+        showMessage('⏳ Programando recordatorio...', 'info');
+        const res = await fetch('https://recordatorios-backend.vercel.app/api/schedule', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ playerId, notif: nuevaNotif })
+        });
+        const data = await res.json();
+        if (data.ok) {
+            showMessage('✅ Recordatorio creado y programado', 'success');
+        } else {
+            console.error('schedule error:', data);
+            showMessage('✅ Guardado localmente (error al programar en 2do plano)', 'info');
+        }
+    } catch(e) {
+        console.error('schedule fetch error:', e);
+        showMessage('✅ Guardado localmente (sin conexión al backend)', 'info');
+    }
 };
 
 window.eliminarNotificacionPersonalizada = function(id) {
@@ -765,6 +814,7 @@ function renderizarHistorial() {
 
     container.innerHTML = appState.historial.slice(0, 10).map(item => `
         <div class="historial-item ${item.omitida ? 'omitida' : ''} ${item.completado ? 'completado' : ''}">
+            <div class="historial-icon">${item.icono || '🔔'}</div>
             <div class="historial-content">
                 <div class="historial-header">
                     <span class="historial-title">${item.titulo}</span>

@@ -37,6 +37,44 @@ function notificarPagina(clients, tipo, item) {
     });
 }
 
+// ==================== REPROGRAMAR PERSONALIZADAS ====================
+// Cuando llega una notificación personalizada, la reprogramamos para la próxima ocurrencia
+// enviando una petición al backend de Vercel con el Player ID del suscriptor.
+async function reprogramarSiCorresponde(data, notifTitle, notifBody, notifIcon) {
+    const reprogramar = data.reprogramar; // 'diario' | 'periodico' | null
+    const id          = data.id;
+    const playerId    = data.playerId;
+
+    if (!reprogramar || !id || !playerId) return;
+
+    const notif = {
+        id,
+        titulo:  notifTitle,
+        mensaje: notifBody,
+        icono:   data.icono || '🔔',
+        tipo:    reprogramar === 'diario' ? 'diario' : 'periodico'
+    };
+
+    // Para diario: misma hora pero mañana (el backend calcula la fecha)
+    if (reprogramar === 'diario') {
+        notif.hora       = data.hora;
+    } else {
+        notif.horaInicio = data.horaInicio;
+        notif.horaFin    = data.horaFin;
+        notif.intervalo  = data.intervalo;
+    }
+
+    try {
+        await fetch('https://recordatorios-backend.vercel.app/api/schedule', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ playerId, notif })
+        });
+    } catch(e) {
+        console.warn('SW reprogramar error:', e);
+    }
+}
+
 // ==================== NOTIFICATIONCLICK ====================
 // Punto de captura único y confiable en Edge, Chrome y Firefox.
 // Aquí siempre tenemos title, body y data completos.
@@ -70,14 +108,17 @@ self.addEventListener('notificationclick', function(event) {
     if (action === 'done') {
         event.waitUntil(
             guardarEnHistorial(item).then(() =>
-                self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-                    // Primero NUEVA_NOTIF para insertar en historial, luego MARK_DONE para marcarlo
-                    notificarPagina(clients, tipo, item);
-                    setTimeout(() => {
-                        clients.forEach(c => c.postMessage({ type: 'MARK_DONE', tipo }));
-                    }, 100);
-                    if (clients.length === 0) return self.clients.openWindow('/');
-                })
+                Promise.all([
+                    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+                        notificarPagina(clients, tipo, item);
+                        setTimeout(() => {
+                            clients.forEach(c => c.postMessage({ type: 'MARK_DONE', tipo }));
+                        }, 100);
+                        if (clients.length === 0) return self.clients.openWindow('/');
+                    }),
+                    // Reprogramar si es diaria o periódica
+                    reprogramarSiCorresponde(data, notif.title || data.titulo, notif.body || data.mensaje, notif.icon)
+                ])
             )
         );
 
@@ -115,18 +156,21 @@ self.addEventListener('notificationclick', function(event) {
         );
 
     } else {
-        // Clic en el cuerpo — abrir/enfocar app y registrar
+        // Clic en el cuerpo — abrir/enfocar app, registrar y reprogramar
         event.waitUntil(
             guardarEnHistorial(item).then(() =>
-                self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
-                    notificarPagina(clients, tipo, item);
-                    const appClient = clients.find(c => c.url.includes(self.location.origin));
-                    if (appClient) {
-                        appClient.focus();
-                    } else {
-                        return self.clients.openWindow('/');
-                    }
-                })
+                Promise.all([
+                    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clients => {
+                        notificarPagina(clients, tipo, item);
+                        const appClient = clients.find(c => c.url.includes(self.location.origin));
+                        if (appClient) {
+                            appClient.focus();
+                        } else {
+                            return self.clients.openWindow('/');
+                        }
+                    }),
+                    reprogramarSiCorresponde(data, notif.title || data.titulo, notif.body || data.mensaje, notif.icon)
+                ])
             )
         );
     }
