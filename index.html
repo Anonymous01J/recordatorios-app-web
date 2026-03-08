@@ -6,7 +6,8 @@
     <title>💊 Recordatorios - Suplemento y Parche</title>
     <link rel="stylesheet" href="assets/css/style.css">
     <link rel="manifest" href="assets/js/manifest.json">
-
+    <link rel="apple-touch-icon" sizes="180x180" href="favicon.ico">
+    <link rel="icon" type="image/jpeg" sizes="32x32" href="favicon.ico">
     <meta name="description" content="App web que te hice para gestionar tus recordatorios diarios de suplementos y del parches.">
     <meta name="keywords" content="recordatorios, salud, suplementos, notificaciones, bienestar">
     <meta name="author" content="José G Pérez">
@@ -15,7 +16,8 @@
     <meta property="og:type" content="website">
     <meta property="og:title" content="💊 Recordatorios - Suplemento y Parche">
     <meta property="og:description" content="No olvides nunca más tus tomas. Sistema de recordatorios inteligente con modo No Molestar.">
-    <meta property="og:image" content="assets/img/og-image.jpg"> <meta property="og:url" content="https://tu-dominio.com">
+    <meta property="og:image" content="favicon.ico">
+    <meta property="og:url" content="https://recordatorios-app-web.joseguillermojose01.workers.dev/">
 
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="💊 Recordatorios Diarios">
@@ -24,12 +26,80 @@
     <meta name="theme-color" content="#764ba2">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    </head>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+
+    <style>
+        /* Lucide icon sizing inside notif-icon and proxima-icon containers */
+        .notif-icon svg,
+        .proxima-icon svg,
+        .historial-icon svg {
+            width: 1.4em;
+            height: 1.4em;
+            stroke: currentColor;
+        }
+        /* Inline lucide icons (titles, badges, text) */
+        .icon-inline {
+            display: inline-block;
+            vertical-align: middle;
+            width: 1em;
+            height: 1em;
+            stroke: currentColor;
+            margin-right: 2px;
+        }
+        /* Time input wrapper con ícono */
+        .time-input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .time-input-icon {
+            position: absolute;
+            left: 12px;
+            width: 16px;
+            height: 16px;
+            stroke: #667eea;
+            pointer-events: none;
+            z-index: 1;
+            flex-shrink: 0;
+        }
+
+        input[type="time"].time-input {
+            padding-left: 38px;
+            cursor: pointer;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 0.03em;
+            color: #333;
+            font-weight: 500;
+        }
+
+        /* Quitar el ícono nativo del navegador en Chrome/Edge */
+        input[type="time"].time-input::-webkit-calendar-picker-indicator {
+            opacity: 0.5;
+            cursor: pointer;
+            border-radius: 4px;
+            padding: 2px;
+            transition: opacity 0.2s;
+        }
+
+        input[type="time"].time-input::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+            background-color: #f0f0ff;
+        }
+
+        input[type="time"].time-input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+        }
+    </style>
+</head>
 <body>
     <div class="container">
         <header>
             <h1>💊 Tus Recordatorios Diarios</h1>
-            <p class="subtitle">Suplemento cada 3h · Parche solo a las 9pm 🪝</p>
+            <p class="subtitle">Suplemento cada 3h &middot; Parche solo a las 9pm 🏴‍☠️</p>
         </header>
 
         <!-- Estado -->
@@ -76,7 +146,7 @@
             <h4>📌 Resumen:</h4>
             <ul>
                 <li>💊 <strong>Suplemento:</strong> 12pm, 3pm, 6pm, 9pm</li>
-                <li>🪝 <strong>Parche:</strong> 9pm (una vez al día)</li>
+                <li><i data-lucide="eye-off" class="icon-inline"></i> <strong>Parche:</strong> 9pm (una vez al día)</li>
                 <li>🔕 <strong>No molestar:</strong> Silencia todo hasta mañana</li>
                 <li>➕ <strong>Personalizados:</strong> Crea tus propios recordatorios</li>
             </ul>
@@ -122,48 +192,27 @@
             <!-- Opciones hora única / diario -->
             <div id="opcionesHora" class="form-group">
                 <label>Hora</label>
-                <select id="horaUnica" class="form-input form-select">
-                    <option value="6">6:00 AM</option>
-                    <option value="7">7:00 AM</option>
-                    <option value="8">8:00 AM</option>
-                    <option value="9" selected>9:00 AM</option>
-                    <option value="10">10:00 AM</option>
-                    <option value="11">11:00 AM</option>
-                    <option value="12">12:00 PM</option>
-                    <option value="13">1:00 PM</option>
-                    <option value="14">2:00 PM</option>
-                    <option value="15">3:00 PM</option>
-                    <option value="16">4:00 PM</option>
-                    <option value="17">5:00 PM</option>
-                    <option value="18">6:00 PM</option>
-                    <option value="19">7:00 PM</option>
-                    <option value="20">8:00 PM</option>
-                    <option value="21">9:00 PM</option>
-                    <option value="22">10:00 PM</option>
-                </select>
+                <div class="time-input-wrapper">
+                    <i data-lucide="clock" class="time-input-icon"></i>
+                    <input type="time" id="horaUnica" value="09:00" class="form-input time-input">
+                </div>
             </div>
 
             <!-- Opciones periódico -->
             <div id="opcionesPeriodico" class="form-row" style="display:none">
                 <div class="form-group">
                     <label>Hora inicio</label>
-                    <select id="horaInicioPeriodico" class="form-input form-select">
-                        <option value="6">6:00 AM</option>
-                        <option value="7">7:00 AM</option>
-                        <option value="8" selected>8:00 AM</option>
-                        <option value="9">9:00 AM</option>
-                        <option value="10">10:00 AM</option>
-                        <option value="12">12:00 PM</option>
-                    </select>
+                    <div class="time-input-wrapper">
+                        <i data-lucide="clock" class="time-input-icon"></i>
+                        <input type="time" id="horaInicioPeriodico" value="08:00" class="form-input time-input">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Hora fin</label>
-                    <select id="horaFinPeriodico" class="form-input form-select">
-                        <option value="18">6:00 PM</option>
-                        <option value="20">8:00 PM</option>
-                        <option value="21">9:00 PM</option>
-                        <option value="22" selected>10:00 PM</option>
-                    </select>
+                    <div class="time-input-wrapper">
+                        <i data-lucide="clock" class="time-input-icon"></i>
+                        <input type="time" id="horaFinPeriodico" value="22:00" class="form-input time-input">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>Cada</label>
@@ -186,5 +235,17 @@
 
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script src="assets/js/script.js"></script>
+    <script>
+        // Inicializar iconos Lucide después de que el DOM cargue
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        });
+        // También re-renderizar tras cada actualización dinámica del DOM
+        // (script.js llama renderizarUI que inyecta HTML dinámico con iconos)
+        const _origCreateIcons = () => {
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        };
+        document.addEventListener('lucide:refresh', _origCreateIcons);
+    </script>
 </body>
 </html>

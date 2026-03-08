@@ -1,6 +1,18 @@
 // ==================== CONFIGURACIÓN ====================
 const ONE_SIGNAL_APP_ID = '7713db9d-8fcb-4f21-ac0b-85e5aa1e7853';
 
+// Helper: ícono Lucide como string SVG inline para HTML dinámico
+function lucideIcon(name, extraClass = '') {
+    // Mapa de iconos usados en la app
+    const icons = {
+        // Parche ocular pirata
+        'eye-off': `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off ${extraClass}" aria-hidden="true"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>`,
+        pill:      `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pill ${extraClass}" aria-hidden="true"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/></svg>`,
+        bell:      `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-bell ${extraClass}" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>`,
+    };
+    return icons[name] || icons['bell'];
+}
+
 // Definición de las dos notificaciones base
 const NOTIFICACIONES = {
     suplemento: {
@@ -19,12 +31,12 @@ const NOTIFICACIONES = {
     },
     parche: {
         id: 'parche',
-        titulo: "🏴‍☠️ ¿Te pusiste tu parche hoy?",
-        mensaje: "Si no lo has hecho, es tu momento de hacer Cosplay de Garfio 🪝",
+        titulo: "🏴‍☠️ Parche: ¿ya te lo pusiste hoy?",
+        mensaje: "Si no lo has hecho, es tu momento de hacer Cosplay de Garfio ☠️",
         horaUnica: 21,
         activa: true,
         prioridad: 'high',
-        icono: "🪝",
+        icono: "eye-off",  // lucide icon name — parche ocular pirata
         ultimaNotificacion: null,
         tipo: 'diario',
         notificadoHoy: false,
@@ -51,7 +63,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     cargarEstadoGuardado();
     inicializarOneSignal();
     escucharMensajesServiceWorker();
-    await cargarHistorialDesdeDB(); // ← lee IndexedDB antes de renderizar
+    await cargarHistorialDesdeDB();
     renderizarUI();
     iniciarVerificadorNotificaciones();
     inicializarModal();
@@ -69,10 +81,10 @@ function escucharMensajesServiceWorker() {
             if (appState.historial.length > 50) appState.historial.pop();
             renderizarHistorial();
             renderizarNotificaciones();
+            refrescarLucide();
         }
 
         if (type === 'MARK_DONE') {
-            // Buscar el item más reciente del mismo tipo y marcarlo
             const idTipo = tipo || 'suplemento';
             const target = appState.historial.find(n => n.idTipo === idTipo && !n.completado);
             if (target) {
@@ -80,6 +92,7 @@ function escucharMensajesServiceWorker() {
                 guardarItemEnDB(target);
                 renderizarHistorial();
                 renderizarNotificaciones();
+                refrescarLucide();
             }
             showMessage('✅ ¡Marcado como hecho!', 'success');
         }
@@ -95,6 +108,13 @@ function escucharMensajesServiceWorker() {
             actualizarContadores();
         }
     });
+}
+
+// ==================== LUCIDE REFRESH ====================
+function refrescarLucide() {
+    if (typeof lucide !== 'undefined') {
+        lucide.createIcons();
+    }
 }
 
 // ==================== INDEXEDDB (frontend) ====================
@@ -118,7 +138,6 @@ async function cargarHistorialDesdeDB() {
             req.onsuccess = e => resolve(e.target.result);
             req.onerror   = e => reject(e.target.error);
         });
-        // Ordenar por timestamp desc y tomar los últimos 50
         items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         appState.historial = items.slice(0, 50);
     } catch(e) {
@@ -138,7 +157,6 @@ async function guardarItemEnDB(item) {
             tx.onerror    = e => reject(e.target.error);
         });
     } catch(e) {
-        // Fallback a localStorage
         localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
     }
 }
@@ -163,7 +181,6 @@ function cargarEstadoGuardado() {
         appState.fechaUltimoParche = hoy;
     }
 
-    // Resetear contadores si es un nuevo día
     if (appState.fechaContador !== hoy) {
         appState.notificacionesHoy = { suplemento: 0, parche: 0 };
         appState.fechaContador = hoy;
@@ -173,16 +190,12 @@ function cargarEstadoGuardado() {
         appState.notificacionesPersonalizadas = [];
     }
 
-    // Resetear notificadoHoy de personalizadas si es nuevo día
     appState.notificacionesPersonalizadas.forEach(n => {
         if (n.tipo === 'diario' && n.fechaUltimaNotif !== hoy) {
             n.notificadoHoy = false;
         }
     });
 
-    // El historial se carga por separado desde IndexedDB en cargarHistorialDesdeDB()
-
-    // Restaurar estado activa de notificaciones base
     if (appState.notificacionesBaseActiva) {
         Object.keys(appState.notificacionesBaseActiva).forEach(id => {
             if (NOTIFICACIONES[id]) {
@@ -193,7 +206,6 @@ function cargarEstadoGuardado() {
 }
 
 function guardarEstado() {
-    // Persistir también el estado activa de las notificaciones base
     appState.notificacionesBaseActiva = {
         suplemento: NOTIFICACIONES.suplemento.activa,
         parche:     NOTIFICACIONES.parche.activa
@@ -215,7 +227,6 @@ function inicializarOneSignal() {
             }
         });
 
-        // Fallback: si OneSignal captura el clic antes que el SW
         OneSignal.Notifications.addEventListener("click", (event) => {
             const actionId = event.result?.actionId;
             const tipo = event.notification?.data?.tipo || 'suplemento';
@@ -224,13 +235,12 @@ function inicializarOneSignal() {
                 marcarComoCompletado(tipo);
                 showMessage('✅ ¡Marcado como hecho!', 'success');
                 renderizarUI();
+                refrescarLucide();
             }
-            // 'snooze' lo maneja el SW directamente
         });
 
         await verificarSuscripcion();
 
-        // Guardar Player ID para usarlo al programar notificaciones personalizadas
         try {
             const pid = OneSignal.User.PushSubscription.id;
             if (pid) {
@@ -284,7 +294,6 @@ window.suscribir = async function() {
         await OneSignal.Notifications.requestPermission();
         setTimeout(async () => {
             await verificarSuscripcion();
-            // Inicializar tags con el estado actual de los switches y DND
             try {
                 Object.keys(NOTIFICACIONES).forEach(id => {
                     OneSignal.User.addTag(id, NOTIFICACIONES[id].activa ? '1' : '0');
@@ -319,7 +328,6 @@ function verificarNotificaciones() {
     const horaActual = ahora.getHours();
     const minutoActual = ahora.getMinutes();
 
-    // Suplemento (cada 3h)
     const suplemento = NOTIFICACIONES.suplemento;
     if (suplemento.activa) {
         if (horaActual >= suplemento.horaInicio && horaActual <= suplemento.horaFin) {
@@ -333,7 +341,6 @@ function verificarNotificaciones() {
         }
     }
 
-    // Parche (9pm)
     const parche = NOTIFICACIONES.parche;
     if (parche.activa && !parche.notificadoHoy) {
         if (horaActual === parche.horaUnica && minutoActual === 0) {
@@ -344,7 +351,6 @@ function verificarNotificaciones() {
         }
     }
 
-    // Notificaciones personalizadas
     const hoy = new Date().toDateString();
     appState.notificacionesPersonalizadas.forEach(notif => {
         if (!notif.activa) return;
@@ -387,7 +393,6 @@ async function enviarNotificacion(notificacion) {
     const horaStr = formatHour(ahora.getHours());
     const fechaStr = ahora.toLocaleDateString();
 
-    // Botones según tipo: suplemento tiene snooze, los demás solo hecho
     const acciones = notificacion.id === 'suplemento'
         ? [
             { action: 'done',   title: '✅ ¡Hecho!' },
@@ -445,7 +450,6 @@ async function enviarNotificacionPersonalizada(notif) {
         data: { tipo: notif.id, hora: ahora.getHours() },
         requireInteraction: true,
         vibrate: [200, 100, 200],
-        // Personalizadas: solo hecho
         actions: [
             { action: 'done', title: '✅ ¡Hecho!' }
         ]
@@ -482,19 +486,14 @@ function programarRecordatorio(tipo, minutos) {
 }
 
 function marcarComoCompletado(tipo) {
-    // Marcar en el historial
     const notif = appState.historial.find(n => n.id === tipo && !n.completado);
     if (notif) {
         notif.completado = true;
         localStorage.setItem('historialNotificaciones', JSON.stringify(appState.historial));
         renderizarHistorial();
     }
-
-    // Actualizar badge de contador visual
     guardarEstado();
 }
-
-
 
 // ==================== MODO NO MOLESTAR ====================
 function setDndTag(activo) {
@@ -514,6 +513,7 @@ window.activarNoMolestar = function() {
     setDndTag(true);
     guardarEstado();
     renderizarUI();
+    refrescarLucide();
     showMessage('🔕 Modo No Molestar activo hasta medianoche', 'info');
 };
 
@@ -523,12 +523,12 @@ window.desactivarNoMolestar = function() {
     setDndTag(false);
     guardarEstado();
     renderizarUI();
+    refrescarLucide();
     showMessage('🔔 Modo No Molestar desactivado', 'success');
 };
 
 // ==================== MODAL NUEVA NOTIFICACIÓN ====================
 function inicializarModal() {
-    const modal = document.getElementById('modalNueva');
     const overlay = document.getElementById('modalOverlay');
 
     document.getElementById('tipoRepeticion').addEventListener('change', function() {
@@ -560,6 +560,13 @@ function limpiarFormulario() {
     document.getElementById('opcionesHora').style.display = 'block';
 }
 
+// Parsea "HH:MM" de input[type="time"] → hora entera
+function parseTimeInput(value, fallback = 9) {
+    if (!value) return fallback;
+    const [h] = value.split(':').map(Number);
+    return isNaN(h) ? fallback : h;
+}
+
 window.guardarNotificacionPersonalizada = async function() {
     const titulo = document.getElementById('nuevaTitulo').value.trim();
     const mensaje = document.getElementById('nuevaMensaje').value.trim();
@@ -584,19 +591,19 @@ window.guardarNotificacionPersonalizada = async function() {
     };
 
     if (tipo === 'periodico') {
-        nuevaNotif.horaInicio = parseInt(document.getElementById('horaInicioPeriodico').value) || 8;
-        nuevaNotif.horaFin    = parseInt(document.getElementById('horaFinPeriodico').value)    || 22;
-        nuevaNotif.intervalo  = parseInt(document.getElementById('intervaloPeriodico').value)  || 2;
+        nuevaNotif.horaInicio = parseTimeInput(document.getElementById('horaInicioPeriodico').value, 8);
+        nuevaNotif.horaFin    = parseTimeInput(document.getElementById('horaFinPeriodico').value, 22);
+        nuevaNotif.intervalo  = parseInt(document.getElementById('intervaloPeriodico').value) || 2;
     } else {
-        nuevaNotif.hora = parseInt(document.getElementById('horaUnica').value) || 9;
+        nuevaNotif.hora = parseTimeInput(document.getElementById('horaUnica').value, 9);
     }
 
     appState.notificacionesPersonalizadas.push(nuevaNotif);
     guardarEstado();
     renderizarNotificaciones();
+    refrescarLucide();
     cerrarModal();
 
-    // Programar en OneSignal via backend
     const playerId = await getPlayerId();
     if (!playerId) {
         showMessage('✅ Recordatorio guardado (activo solo con app abierta — activa notificaciones para 2do plano)', 'info');
@@ -627,6 +634,7 @@ window.eliminarNotificacionPersonalizada = function(id) {
     appState.notificacionesPersonalizadas = appState.notificacionesPersonalizadas.filter(n => n.id !== id);
     guardarEstado();
     renderizarNotificaciones();
+    refrescarLucide();
     showMessage('🗑️ Recordatorio eliminado', 'info');
 };
 
@@ -637,6 +645,7 @@ function renderizarUI() {
     renderizarControlesNoMolestar();
     renderizarHistorial();
     renderizarProximasNotificaciones();
+    refrescarLucide();
 }
 
 function renderizarEstado() {
@@ -658,9 +667,16 @@ function renderizarEstado() {
     }
 }
 
+// Renderiza el ícono del parche usando SVG Lucide inline
+function renderizarIconoParche(clases = '') {
+    return `<span class="notif-icon" style="color:white">${lucideIcon('bandage', clases)}</span>`;
+}
+
 function renderizarNotificaciones() {
     const container = document.getElementById('notificacionesContainer');
     if (!container) return;
+
+    const hoyISO = new Date().toISOString().slice(0, 10);
 
     let html = `<div class="notificaciones-grid">
         <!-- Suplemento -->
@@ -677,7 +693,7 @@ function renderizarNotificaciones() {
             </div>
             <div class="notif-schedule">📅 12:00 PM · 3:00 PM · 6:00 PM · 9:00 PM</div>
             <div class="notif-stats">
-                ${appState.historial.some(h => h.idTipo === 'suplemento' && h.completado && h.timestamp && h.timestamp.startsWith(new Date().toISOString().slice(0,10))) ?
+                ${appState.historial.some(h => h.idTipo === 'suplemento' && h.completado && h.timestamp && h.timestamp.startsWith(hoyISO)) ?
                     '<span class="badge done">✅ Completado</span>' :
                     '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
@@ -685,8 +701,8 @@ function renderizarNotificaciones() {
         <!-- Parche -->
         <div class="notificacion-card ${NOTIFICACIONES.parche.activa ? 'activa' : ''}">
             <div class="notif-header">
-                <span class="notif-icon">🪝</span>
-                <span class="notif-title">Parche de Garfio</span>
+                ${renderizarIconoParche()}
+                <span class="notif-title">Parche</span>
                 <label class="switch">
                     <input type="checkbox"
                            ${NOTIFICACIONES.parche.activa ? 'checked' : ''}
@@ -696,7 +712,7 @@ function renderizarNotificaciones() {
             </div>
             <div class="notif-schedule">📅 9:00 PM — una vez al día</div>
             <div class="notif-stats">
-                ${appState.historial.some(h => h.idTipo === 'parche' && h.completado && h.timestamp && h.timestamp.startsWith(new Date().toISOString().slice(0,10))) ?
+                ${appState.historial.some(h => h.idTipo === 'parche' && h.completado && h.timestamp && h.timestamp.startsWith(hoyISO)) ?
                     '<span class="badge done">✅ Completado</span>' :
                     '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
@@ -709,10 +725,16 @@ function renderizarNotificaciones() {
             ? `📅 Diario a las ${formatHour(notif.hora)}`
             : `📅 Una vez a las ${formatHour(notif.hora)}`;
 
+        // Si el icono es un nombre de lucide icon, renderizarlo como SVG
+        const esLucide = ['eye-off', 'pill', 'bell'].includes(notif.icono);
+        const iconoHTML = esLucide
+            ? `<span class="notif-icon" style="color:white">${lucideIcon(notif.icono)}</span>`
+            : `<span class="notif-icon">${notif.icono}</span>`;
+
         html += `
         <div class="notificacion-card ${notif.activa ? 'activa' : ''} custom">
             <div class="notif-header">
-                <span class="notif-icon">${notif.icono}</span>
+                ${iconoHTML}
                 <span class="notif-title">${notif.titulo.replace(notif.icono + ' ', '')}</span>
                 <label class="switch">
                     <input type="checkbox"
@@ -766,7 +788,7 @@ function renderizarProximasNotificaciones() {
     if (suplemento.activa) {
         for (let h = suplemento.horaInicio; h <= suplemento.horaFin; h += suplemento.intervalo) {
             if (h > horaActual) {
-                proximas.push({ icono: suplemento.icono, titulo: 'Suplemento', horaFormateada: formatHour(h), tipo: 'Cada 3h' });
+                proximas.push({ icono: suplemento.icono, titulo: 'Suplemento', horaFormateada: formatHour(h), tipo: 'Cada 3h', lucide: false });
                 break;
             }
         }
@@ -774,15 +796,16 @@ function renderizarProximasNotificaciones() {
 
     const parche = NOTIFICACIONES.parche;
     if (parche.activa && !parche.notificadoHoy && parche.horaUnica > horaActual) {
-        proximas.push({ icono: parche.icono, titulo: 'Parche de Garfio', horaFormateada: formatHour(parche.horaUnica), tipo: 'Una vez' });
+        proximas.push({ icono: 'bandage', titulo: 'Parche', horaFormateada: formatHour(parche.horaUnica), tipo: 'Una vez', lucide: true });
     }
 
     appState.notificacionesPersonalizadas.forEach(notif => {
         if (!notif.activa) return;
+        const esLucide = ['eye-off', 'pill', 'bell'].includes(notif.icono);
         if (notif.tipo === 'diario' && !notif.notificadoHoy && notif.hora > horaActual) {
-            proximas.push({ icono: notif.icono, titulo: notif.titulo.replace(notif.icono + ' ', ''), horaFormateada: formatHour(notif.hora), tipo: 'Diario' });
+            proximas.push({ icono: notif.icono, titulo: notif.titulo.replace(notif.icono + ' ', ''), horaFormateada: formatHour(notif.hora), tipo: 'Diario', lucide: esLucide });
         } else if (notif.tipo === 'unica' && !notif.enviada && notif.hora > horaActual) {
-            proximas.push({ icono: notif.icono, titulo: notif.titulo.replace(notif.icono + ' ', ''), horaFormateada: formatHour(notif.hora), tipo: 'Una vez' });
+            proximas.push({ icono: notif.icono, titulo: notif.titulo.replace(notif.icono + ' ', ''), horaFormateada: formatHour(notif.hora), tipo: 'Una vez', lucide: esLucide });
         }
     });
 
@@ -791,16 +814,20 @@ function renderizarProximasNotificaciones() {
         return;
     }
 
-    container.innerHTML = proximas.map(notif => `
+    container.innerHTML = proximas.map(notif => {
+        const iconoHTML = notif.lucide
+            ? `<span class="proxima-icon">${lucideIcon(notif.icono)}</span>`
+            : `<span class="proxima-icon">${notif.icono}</span>`;
+        return `
         <div class="proxima-item">
-            <span class="proxima-icon">${notif.icono}</span>
+            ${iconoHTML}
             <div class="proxima-info">
                 <span class="proxima-titulo">${notif.titulo}</span>
                 <span class="proxima-tipo">${notif.tipo}</span>
             </div>
             <span class="proxima-hora">${notif.horaFormateada}</span>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function renderizarHistorial() {
@@ -812,8 +839,16 @@ function renderizarHistorial() {
         return;
     }
 
-    container.innerHTML = appState.historial.slice(0, 10).map(item => `
+    container.innerHTML = appState.historial.slice(0, 10).map(item => {
+        // El icono puede ser emoji o nombre lucide
+        const esLucide = ['eye-off', 'pill', 'bell'].includes(item.icono);
+        const iconoHTML = esLucide
+            ? `<span class="historial-icon">${lucideIcon(item.icono)}</span>`
+            : `<span class="historial-icon">${item.icono || '🔔'}</span>`;
+
+        return `
         <div class="historial-item ${item.omitida ? 'omitida' : ''} ${item.completado ? 'completado' : ''}">
+            ${iconoHTML}
             <div class="historial-content">
                 <div class="historial-header">
                     <span class="historial-title">${item.titulo}</span>
@@ -823,8 +858,8 @@ function renderizarHistorial() {
                 ${item.omitida ? '<span class="badge omitted">🔇 Omitida</span>' : ''}
                 ${item.completado ? '<span class="badge done">✅ Completado</span>' : '<span class="badge pending">⏳ Pendiente</span>'}
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function actualizarContadores() { /* eliminado */ }
@@ -835,7 +870,6 @@ window.toggleNotificacion = function(id) {
         NOTIFICACIONES[id].activa = !NOTIFICACIONES[id].activa;
         const activa = NOTIFICACIONES[id].activa;
 
-        // Actualizar tag en OneSignal para que el backend filtre correctamente
         try {
             const OneSignal = window.OneSignal;
             if (OneSignal && OneSignal.User && OneSignal.User.addTag) {
@@ -846,6 +880,7 @@ window.toggleNotificacion = function(id) {
         guardarEstado();
         renderizarNotificaciones();
         renderizarProximasNotificaciones();
+        refrescarLucide();
         const nombre = id === 'suplemento' ? 'del suplemento' : 'del parche';
         showMessage(activa ? `✅ Recordatorio ${nombre} activado` : `❌ Recordatorio ${nombre} desactivado`, 'info');
     }
@@ -857,6 +892,7 @@ window.toggleNotificacionPersonalizada = function(id) {
         notif.activa = !notif.activa;
         guardarEstado();
         renderizarNotificaciones();
+        refrescarLucide();
         showMessage(notif.activa ? '✅ Recordatorio activado' : '❌ Recordatorio desactivado', 'info');
     }
 };
@@ -868,6 +904,7 @@ async function agregarAlHistorial(item) {
     if (appState.historial.length > 50) appState.historial.pop();
     await guardarItemEnDB(entrada);
     renderizarHistorial();
+    refrescarLucide();
 }
 
 function marcarComoCompletado(tipo) {
